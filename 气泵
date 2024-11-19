@@ -1,0 +1,117 @@
+// 引脚定义
+const int trigPin = 3;    // 超声波传感器 Trig 引脚
+const int echoPin = 2;    // 超声波传感器 Echo 引脚
+const int ldrPin = A1;    // 光敏传感器输入引脚
+const int emgPin = A0;    // EMG 信号输入引脚
+const int pump1Pin = 9;   // 气泵 1 PWM 控制引脚
+const int pump2Pin = 10;  // 气泵 2 PWM 控制引脚
+const int pump3Pin = 11;  // 气泵 3 PWM 控制引脚
+
+// 参数定义
+const int lightThreshold = 500; // 光敏阈值（模拟值）低于此值为黑夜
+const float rmsThresholdLow = 50; // EMG 低活动阈值
+const float rmsThresholdHigh = 200; // EMG 高活动阈值
+const int distanceThreshold = 100; // 超声波距离阈值（单位：cm）仅检测用户1m外的人体是否存在
+
+// 滑动窗口参数
+const int windowSize = 10; // RMS 计算窗口大小
+float signalBuffer[windowSize] = {0};
+int bufferIndex = 0;
+
+// 其他变量
+float rms = 0;   // 实时 RMS 值
+int pumpSpeed = 0; // 气泵动力
+
+void setup() {
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  pinMode(pump1Pin, OUTPUT);
+  pinMode(pump2Pin, OUTPUT);
+  pinMode(pump3Pin, OUTPUT);
+  Serial.begin(9600);
+}
+
+void loop() {
+  // 超声波检测
+  if (detectPresence()) {
+    turnOffPumps(); // 若有人存在，关闭所有气泵
+    delay(500); // 延迟，避免频繁检测
+    return; // 结束本次循环
+  }//待优化：判定条件是否过于粗暴？
+
+  // 检测光照
+  int lightLevel = analogRead(ldrPin);
+  if (lightLevel > lightThreshold) {
+    turnOffPumps(); // 若为白天状态，关闭所有气泵
+    delay(500);
+    return;
+  }//待优化：判定条件是否过于粗暴？
+
+  // 采集和处理 EMG 数据
+  int rawSignal = analogRead(emgPin);
+  float smoothedSignal = abs(rawSignal - 512); // 模拟整流
+  updateSignalBuffer(smoothedSignal);
+  rms = calculateRMS();
+
+  // 映射 RMS 值到气泵动力
+  if (rms < rmsThresholdLow) {
+    pumpSpeed = 0; // 静息状态
+  } else if (rms >= rmsThresholdLow && rms < rmsThresholdHigh) {
+    pumpSpeed = map(rms, rmsThresholdLow, rmsThresholdHigh, 50, 150); // 中速
+  } else {
+    pumpSpeed = 255; // 最大动力
+  }
+
+  // 控制气泵
+  controlPumps(pumpSpeed);
+
+  // 调试信息
+  Serial.print("RMS: ");
+  Serial.print(rms);
+  Serial.print(" | Pump Speed: ");
+  Serial.println(pumpSpeed);
+
+  delay(50); // 延迟 50ms 模拟实时采样
+}
+
+// 超声波检测1m之外是否有人
+bool detectPresence() {
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  long duration = pulseIn(echoPin, HIGH);
+  int distance = duration * 0.034 / 2; // 计算距离，单位：cm
+  return (distance < distanceThreshold); // 返回是否有人
+}
+
+// 更新滑动窗口
+void updateSignalBuffer(float newSignal) {
+  signalBuffer[bufferIndex] = newSignal;
+  bufferIndex = (bufferIndex + 1) % windowSize;
+}
+
+// 计算 RMS
+float calculateRMS() {
+  float sum = 0;
+  for (int i = 0; i < windowSize; i++) {
+    sum += signalBuffer[i] * signalBuffer[i];
+  }
+  return sqrt(sum / windowSize);
+}
+
+// 控制气泵函数
+void controlPumps(int speed) {
+  analogWrite(pump1Pin, speed);
+  analogWrite(pump2Pin, speed);
+  analogWrite(pump3Pin, speed);
+}//可优化的部分：如果希望气泵的动力大小不同该怎么办？比如我的1号肌群比较紧张，则1号位置的气泵动力更强
+
+// 关闭气泵函数
+void turnOffPumps() {
+  analogWrite(pump1Pin, 0);
+  analogWrite(pump2Pin, 0);
+  analogWrite(pump3Pin, 0);
+}
