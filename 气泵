@@ -107,7 +107,7 @@ void controlPumps(int speed) {
   analogWrite(pump1Pin, speed);
   analogWrite(pump2Pin, speed);
   analogWrite(pump3Pin, speed);
-}//可优化的部分：如果希望气泵的动力大小不同该怎么办？比如我的1号肌群比较紧张，则1号位置的气泵动力更强
+}//待优化：如果希望气泵的动力大小不同该怎么办？比如我的1号肌群比较紧张，则1号位置的气泵动力更强
 
 // 关闭气泵函数
 void turnOffPumps() {
